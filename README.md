@@ -2,7 +2,7 @@
 
 ## Descargar fuentes
 
-> git clone https://github.com/andresrosso/web-scraping
+> git clone https://github.com/ymontilla/WebScrapingCatastro.git
 
 > cd web-scrapping && checkout sebastian
 
