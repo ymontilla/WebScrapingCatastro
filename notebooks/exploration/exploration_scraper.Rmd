@@ -1,0 +1,334 @@
+---
+jupyter:
+  jupytext:
+    formats: ipynb,Rmd
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.5.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+import pandas as pd
+import codecs
+import numpy as np
+```
+
+```{python}
+
+```
+
+```{python}
+def read_lines_with_len(filename):
+    delimiter = "|"
+    encoding = "iso-8859-1"
+
+    fp = codecs.open(filename, encoding=encoding)
+    lines = fp.read().split("\n")
+    lines = list(map(lambda e: e.split("|"), lines))
+    headers = lines[0]
+    lines_with_len = list(zip(map(lambda e: len(e), lines), lines))
+
+    lines_df = pd.DataFrame(lines_with_len)
+    lines_df.columns = ["len","data"]
+    return lines_df
+```
+
+```{python}
+def fill_13_columns(lines_df):
+    lines_13 = lines_df.loc[lines_df["len"] == 13]
+    if lines_13.shape[0] == 0:
+        return None
+    
+    lines_13 = pd.DataFrame(lines_13["data"].tolist())
+    lines_13.columns = [
+        'surface',
+        'rooms',
+        'baths',
+        'garages',
+        'price',
+        'location',
+        'description',
+        'coordinates',
+        'used',
+        'url',
+        'additional_info',
+        'nature',
+        'pictures'
+    ]
+    lines_13 = lines_13.drop(['used'], axis=1)
+    return lines_13
+
+def fill_12_columns(lines_df):
+    lines_12 = lines_df.loc[lines_df["len"] == 12]
+    if lines_12.shape[0] == 0:
+        return None
+    
+    lines_12 = pd.DataFrame(lines_12["data"].tolist())
+    lines_12.columns = [
+        'surface',
+        'rooms',
+        'baths',
+        'garages',
+        'price',
+        'location',
+        'description',
+        'coordinates',
+        'url',
+        'additional_info',
+        'nature',
+        'pictures'
+    ]
+    return lines_12
+
+def fill_11_columns(lines_df):
+    lines_11 = lines_df.loc[lines_df["len"] == 11]
+    if lines_11.shape[0] == 0:
+        return None
+    
+    lines_11 = pd.DataFrame(lines_11["data"].tolist())
+    lines_11.columns = [
+        'surface',
+        'rooms',
+        'baths',
+        'garages',
+        'price',
+        'location',
+        'description',
+        'coordinates',
+        'url',
+        'additional_info',
+        'nature'
+    ]
+    lines_11.loc[:, "pictures"] = None
+    return lines_11
+
+
+def fill_missing_columns(lines_df, basename):
+    lines_11 = fill_11_columns(lines_df)
+    lines_12 = fill_12_columns(lines_df)
+    lines_13 = fill_13_columns(lines_df)
+    
+    results = []
+    for result in [lines_11, lines_12, lines_13]:
+        if result is not None:
+            results.append(result)
+    
+    final_df = pd.concat(results).reset_index(drop=True)
+    final_df.to_parquet(basename + "/posts.parquet")
+    
+    stats_serie = lines_df["len"].value_counts()
+    stats_df = pd.DataFrame(
+        list(zip(
+            stats_serie.index,
+            stats_serie.values
+        ))
+    )
+    stats_df.columns = ["columns", "count"]
+    return stats_df
+```
+
+```{python}
+
+```
+
+# Arriendo
+
+
+## Arriendos manizales
+
+```{python}
+filename = "../posts/apartamentos/manizales-arriendo/apartments.csv"
+manizales_apartments_raw = read_lines_with_len(filename)
+manizales_apartments_raw.head()
+```
+
+```{python}
+manizales_apartments_stats = fill_missing_columns(manizales_apartments_raw, 
+                                                  "../posts/apartamentos/manizales-arriendo/")
+manizales_apartments_stats.head()
+```
+
+## Arriendos villavicencio
+
+```{python}
+filename = "../posts/apartamentos/villavicencio-arriendo/apartments.csv"
+villavicencio_apartments_raw = read_lines_with_len(filename)
+villavicencio_apartments_raw.head()
+```
+
+```{python}
+villavicencio_apartments_stats = fill_missing_columns(villavicencio_apartments_raw, 
+                                                  "../posts/apartamentos/villavicencio-arriendo/")
+villavicencio_apartments_stats.head()
+```
+
+## Fusagasuga villavicencio
+
+```{python}
+filename = "../posts/apartamentos/fusagasuga-arriendo/apartments.csv"
+fusagasuga_apartments_raw = read_lines_with_len(filename)
+fusagasuga_apartments_raw.head()
+```
+
+```{python}
+fusagasuga_apartments_stats = fill_missing_columns(fusagasuga_apartments_raw, 
+                                                  "../posts/apartamentos/fusagasuga-arriendo/")
+fusagasuga_apartments_stats.head()
+```
+
+```{python}
+
+```
+
+# Casas
+
+
+## Arriendos manizales
+
+```{python}
+filename = "../posts/casas/manizales-arriendo/casas.csv"
+manizales_houses_raw = read_lines_with_len(filename)
+manizales_houses_raw.head()
+```
+
+```{python}
+manizales_houses_stats = fill_missing_columns(manizales_houses_raw, 
+                                                  "../posts/casas/manizales-arriendo/")
+manizales_houses_stats.head()
+```
+
+## Arriendos villavicencio
+
+```{python}
+filename = "../posts/casas/villavicencio-arriendo/casas.csv"
+villavicencio_houses_raw = read_lines_with_len(filename)
+villavicencio_houses_raw.head()
+```
+
+```{python}
+villavicencio_houses_stats = fill_missing_columns(villavicencio_houses_raw, 
+                                                  "../posts/casas/villavicencio-arriendo/")
+villavicencio_houses_stats.head()
+```
+
+## Arriendos fusagasuga
+
+```{python}
+filename = "../posts/casas/fusagasuga-arriendo/casas.csv"
+fusagasuga_houses_raw = read_lines_with_len(filename)
+fusagasuga_houses_raw.head()
+```
+
+```{python}
+fusagasuga_houses_stats = fill_missing_columns(fusagasuga_houses_raw, 
+                                                  "../posts/casas/fusagasuga-arriendo/")
+fusagasuga_houses_stats.head()
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
+
+# Venta
+
+
+## Venta manizales
+
+```{python}
+filename = "../posts/apartamentos/manizales-venta/apartments.csv"
+manizales_apartments_raw = read_lines_with_len(filename)
+manizales_apartments_raw.head()
+```
+
+```{python}
+manizales_apartments_stats = fill_missing_columns(manizales_apartments_raw, 
+                                                  "../posts/apartamentos/manizales-venta/")
+manizales_apartments_stats.head()
+```
+
+## Venta villavicencio
+
+```{python}
+filename = "../posts/apartamentos/villavicencio-venta/apartments.csv"
+villavicencio_apartments_raw = read_lines_with_len(filename)
+villavicencio_apartments_raw.head()
+```
+
+```{python}
+villavicencio_apartments_stats = fill_missing_columns(villavicencio_apartments_raw, 
+                                                  "../posts/apartamentos/villavicencio-venta/")
+villavicencio_apartments_stats.head()
+```
+
+## Venta fusagasuga
+
+```{python}
+filename = "../posts/apartamentos/fusagasuga-venta/apartments.csv"
+fusagasuga_apartments_raw = read_lines_with_len(filename)
+fusagasuga_apartments_raw.head()
+```
+
+```{python}
+fusagasuga_apartments_stats = fill_missing_columns(fusagasuga_apartments_raw, 
+                                                  "../posts/apartamentos/fusagasuga-venta/")
+fusagasuga_apartments_stats.head()
+```
+
+```{python}
+
+```
+
+# Casas
+
+
+## Venta manizales
+
+```{python}
+filename = "../posts/casas/manizales-venta/casas.csv"
+manizales_houses_raw = read_lines_with_len(filename)
+manizales_houses_raw.head()
+```
+
+```{python}
+manizales_houses_stats = fill_missing_columns(manizales_houses_raw, 
+                                                  "../posts/casas/manizales-venta/")
+manizales_houses_stats.head()
+```
+
+## Venta villavicencio
+
+```{python}
+filename = "../posts/casas/villavicencio-venta/casas.csv"
+villavicencio_houses_raw = read_lines_with_len(filename)
+villavicencio_houses_raw.head()
+```
+
+```{python}
+villavicencio_houses_stats = fill_missing_columns(villavicencio_houses_raw, 
+                                                  "../posts/casas/villavicencio-venta/")
+villavicencio_houses_stats.head()
+```
+
+## Venta fusagasuga
+
+```{python}
+filename = "../posts/casas/fusagasuga-venta/casas.csv"
+fusagasuga_houses_raw = read_lines_with_len(filename)
+fusagasuga_houses_raw.head()
+```
+
+```{python}
+fusagasuga_houses_stats = fill_missing_columns(fusagasuga_houses_raw, 
+                                                  "../posts/casas/fusagasuga-venta/")
+fusagasuga_houses_stats.head()
+```

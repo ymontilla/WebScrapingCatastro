@@ -1,0 +1,4 @@
+[core]
+    remote = gstorage
+['remote "gstorage"']
+    url = gs://real-state-scraper/data/

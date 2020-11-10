@@ -1,0 +1,307 @@
+---
+jupyter:
+  jupytext:
+    formats: ipynb,Rmd
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.5.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+# %load_ext dotenv
+# %reload_ext dotenv
+# %dotenv
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+```
+
+```{python}
+import os
+import sys
+from os.path import dirname
+
+UTILS_PATH=os.environ.get('REPO') + "/notebooks/commons"
+sys.path.append(dirname(UTILS_PATH))
+
+from commons import check_args, gen_paths, coordinates_bounds
+```
+
+```{python}
+
+```
+
+```{python}
+def compare_box_plot(df, x, y):
+    fig = plt.figure(figsize=(16, 8))
+
+    ax = fig.add_subplot(2,1,1)
+    sns.boxplot(data=df, x=x, y=y, ax=ax)
+
+    ax = fig.add_subplot(2,1,2)
+    sns.boxplot(data=df, x=x, y=y, ax=ax, showfliers=False)
+    
+def compare_box_vs_violin_plot(df, x, y):
+    fig = plt.figure(figsize=(16, 8))
+
+    ax = fig.add_subplot(2,1,1)
+    sns.boxplot(data=df, x=x, y=y, ax=ax, showfliers=False)
+
+    ax = fig.add_subplot(2,1,2)
+    sns.violinplot(data=df, x=x, y=y, ax=ax)
+    
+def compare_box_dist(df, label):
+    fig = plt.figure(figsize=(16, 8))
+
+    ax = fig.add_subplot(3,1,1)
+    sns.distplot(df[label])
+
+    ax = fig.add_subplot(3,1,2)
+    sns.boxplot(df[label], ax=ax)
+    
+    ax = fig.add_subplot(3,1,3)
+    sns.boxplot(df[label], ax=ax, showfliers=False)
+```
+
+```{python}
+def get_normalized_price_by_max(df, price="price"):
+    df = df.copy()
+    
+    df_prices = df[["estrato", price]].groupby("estrato").agg(lambda e: e.max())
+    df_prices = df_prices.reset_index()
+    df_prices.loc[:, "max_price"] = df_prices[price]
+    df_prices = df_prices.drop([price], axis=1)
+    
+    df_estratos = pd.merge(df_prices, df)
+    df_estratos.loc[:, "norm_price_by_max"] = \
+        df_estratos.apply(lambda e: e[price]/e["max_price"], axis=1)
+    return df_estratos
+```
+
+```{python}
+def upper_interquartile_distance(df):
+    q1 = np.quantile(df, .25)
+    q3 = np.quantile(df, .75)
+    return q3 + 1.5*(q3 - q1)
+
+def get_normalized_price_by_tipical(df, price="price"):
+    df = df.copy()
+    
+    df_prices = df[["estrato", price]].groupby("estrato").agg(upper_interquartile_distance)
+    df_prices = df_prices.reset_index()
+    df_prices.loc[:, "normal_price"] = df_prices[price]
+    df_prices = df_prices.drop([price], axis=1)
+
+    df_estratos = pd.merge(df_prices, df)
+    
+    df_estratos = df_estratos.loc[df_estratos[price] <= df_estratos["normal_price"]]
+    df_estratos.loc[:, "norm_price_by_stat"] = \
+        df_estratos.apply(lambda e: e[price]/e["normal_price"], axis=1)
+
+    return df_estratos
+```
+
+```{python}
+def plot_price_vs_discrete_value(df, label, showfliers=True):
+    plt.figure(figsize=(16,10))
+    features = ['rooms','baths','garages', "antiguedad"]
+    for i,f in enumerate(features):
+        plt.subplot(2,2,i+1)
+        sns.boxplot(x=f ,y=label, data=df, showfliers=showfliers)
+        plt.title(f'{f}')
+```
+
+```{python}
+def load_posts(input_path):
+    df = pd.read_parquet(input_path)
+    return df
+```
+
+```{python}
+
+```
+
+```{python}
+if __name__ == "__main__":
+    city = "manizales"
+    property_type = "casas"
+    post_type = "venta"
+    
+    #city, property_type, post_type = check_args()
+    base_path = os.environ.get('REPO')
+    
+    raw_path, clean_path = gen_paths(city, property_type, post_type)
+    
+    raw_path = base_path + raw_path
+    clean_path = base_path + clean_path
+```
+
+```{python}
+MSG = """
+Hay {} publicaciones de {} en total
+"""
+
+posts = load_posts(clean_path)
+print(MSG.format(posts.shape[0], post_type))
+posts.head()
+```
+
+```{python}
+
+```
+
+### Distribución variables continuas
+
+```{python}
+compare_box_dist(posts, "price")
+```
+
+```{python}
+compare_box_dist(posts, "price_m2")
+```
+
+```{python}
+compare_box_dist(posts, "surface")
+```
+
+```{python}
+
+```
+
+### Distribución precio por varibles discreta
+
+```{python}
+plot_price_vs_discrete_value(posts, "price")
+```
+
+```{python}
+plot_price_vs_discrete_value(posts, "price", showfliers=False)
+```
+
+```{python}
+
+```
+
+```{python}
+plot_price_vs_discrete_value(posts, "price_m2")
+```
+
+```{python}
+plot_price_vs_discrete_value(posts, "price_m2", showfliers=False)
+```
+
+```{python}
+
+```
+
+```{python}
+## Numero de muestras por estrato
+
+sns.catplot(data=posts, x="estrato")
+posts.groupby("estrato").count()
+```
+
+```{python}
+
+```
+
+### Distribución del precio discriminado por estrato
+
+Se verifica la forma del histograma de las variables continuas clasificadas por estrato
+
+```{python}
+compare_box_plot(posts, "estrato", "price")
+```
+
+#### Se normalizan los precion por estrato
+
+La idea es observar si la distribución de los precios es similar entre los estratos luego de normalizar los precios
+
+```{python}
+normalized_price = get_normalized_price_by_max(posts)
+normalized_price.head()
+```
+
+```{python}
+sns.boxplot(data=normalized_price, x="estrato", y="norm_price_by_max", showfliers=False)
+```
+
+#### Se normalizan los precios descartando valores atipicos
+
+Se prueba normalizando sin los valores atipicos
+
+```{python}
+normalized_price = get_normalized_price_by_tipical(posts)
+normalized_price.head()
+```
+
+```{python}
+sns.boxplot(data=normalized_price, x="estrato", y="norm_price_by_stat", showfliers=False)
+```
+
+```{python}
+compare_box_plot(normalized_price, "estrato", "norm_price_by_stat")
+```
+
+```{python}
+compare_box_vs_violin_plot(normalized_price, "estrato", "norm_price_by_stat")
+```
+
+```{python}
+
+```
+
+### Distribución del precio del metro cuadrado discriminado por estrato
+
+```{python}
+compare_box_plot(posts, "estrato", "price_m2")
+```
+
+#### Se normalizan los precion por estrato
+
+La idea es observar si la distribución de los precios es similar entre los estratos luego de normalizar los precios
+
+```{python}
+normalized_price_m2 = get_normalized_price_by_max(posts, price="price_m2")
+normalized_price_m2.head()
+```
+
+```{python}
+sns.boxplot(data=normalized_price_m2, x="estrato", y="norm_price_by_max", showfliers=False)
+```
+
+#### Se normalizan los precios descartando valores atipicos
+
+Se prueba normalizando sin los valores atipicos
+
+```{python}
+normalized_price_m2 = get_normalized_price_by_tipical(posts, price="price_m2")
+normalized_price_m2.head()
+```
+
+```{python}
+sns.boxplot(data=normalized_price_m2, x="estrato", y="norm_price_by_stat", showfliers=False)
+```
+
+```{python}
+compare_box_plot(normalized_price_m2, "estrato", "norm_price_by_stat")
+```
+
+```{python}
+compare_box_vs_violin_plot(normalized_price_m2, "estrato", "norm_price_by_stat")
+```
+
+```{python}
+
+```

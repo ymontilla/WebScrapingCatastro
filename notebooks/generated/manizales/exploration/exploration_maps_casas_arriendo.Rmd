@@ -1,0 +1,211 @@
+---
+jupyter:
+  jupytext:
+    formats: ipynb,Rmd
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.5.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+# %load_ext dotenv
+# %reload_ext dotenv
+# %dotenv
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+import folium
+from folium.plugins import HeatMap
+from shapely.geometry import MultiPoint
+```
+
+```{python}
+import os
+import sys
+
+from os.path import dirname
+UTILS_PATH=os.environ.get('REPO') + "/notebooks/commons"
+sys.path.append(dirname(UTILS_PATH))
+
+from commons import check_args, gen_paths, coordinates_bounds
+```
+
+```{python}
+
+```
+
+```{python}
+import math
+
+def safe_pow(e):
+    result = math.inf
+    try:
+        result = float(2**e)
+        return result
+    except OverflowError as error:
+        return result
+    
+```
+
+```{python}
+def load_posts(input_path):
+    df = pd.read_parquet(input_path)
+    return df
+```
+
+```{python}
+
+```
+
+```{python}
+if __name__ == "__main__":
+    city = "manizales"
+    property_type = "casas"
+    post_type = "arriendo"
+    
+    #city, property_type, post_type = check_args()
+    base_path = os.environ.get('REPO')
+    
+    raw_path, clean_path = gen_paths(city, property_type, post_type)
+    
+    raw_path = base_path + raw_path
+    clean_path = base_path + clean_path
+```
+
+```{python}
+MSG = """
+Hay {} publicaciones de {} en total
+"""
+
+posts = load_posts(clean_path)
+print(MSG.format(posts.shape[0], post_type))
+posts.head()
+```
+
+```{python}
+
+```
+
+## Mapa de calor precios
+
+```{python}
+posts["price"].describe()
+```
+
+```{python}
+folium_hmap = folium.Map(location=[
+    np.mean([coordinates_bounds[city]["lat"]["lower"], coordinates_bounds[city]["lat"]["upper"]]),
+    np.mean([coordinates_bounds[city]["lon"]["lower"], coordinates_bounds[city]["lon"]["upper"]])
+], zoom_start=13, tiles="OpenStreetMap")
+
+posts.loc[:, "price_exploded"] =  posts["price"].apply(safe_pow)
+
+max_amount = posts['price_exploded'].max()
+
+hm_wide = HeatMap( 
+    posts[["latitude", "longitude", "price_exploded"]],
+    min_opacity=0.2,
+    max_val=max_amount,
+    radius=7, blur=1, 
+    max_zoom=15, 
+    gradient={.1:'yellow', .4: 'orange',  .6: 'red'}
+)
+
+folium_hmap.add_child(hm_wide)
+```
+
+```{python}
+
+```
+
+## Mapa de calor número de publicaciones
+
+```{python}
+from sklearn.cluster import DBSCAN
+```
+
+```{python}
+coords = posts[['latitude','longitude']].values
+
+kms_per_radian = 6371.0088
+epsilon = 0.1 / kms_per_radian
+
+min_samples = 5
+```
+
+```{python}
+## Geo clustering with examples
+# https://stackoverflow.com/questions/24762435/clustering-geo-location-coordinates-lat-long-pairs-using-kmeans-algorithm-with
+# https://geoffboeing.com/2014/08/clustering-to-reduce-spatial-data-set-size/
+
+db = DBSCAN(eps=epsilon, min_samples=min_samples, algorithm='ball_tree', metric='haversine').fit(np.radians(coords))
+```
+
+```{python}
+centroids = []
+clusters_size = len(db.labels_)
+
+for n in range(clusters_size):
+    cluster = posts[['latitude','longitude']][db.labels_ == n].copy()
+    if len(cluster) > 0:
+        cluster.loc[:, "cluster_id"] = n
+        
+        multi_point = MultiPoint(cluster.values)
+        cluster.loc[:, "cluster_latitude"] = multi_point.centroid.x
+        cluster.loc[:, "cluster_longitude"] = multi_point.centroid.y
+        
+    centroids.append(cluster)
+        
+clusters_df = pd.concat(centroids)
+clusters_df = clusters_df.reset_index(drop=True)
+clusters_df.head()
+```
+
+```{python}
+clusters_coordinates = clusters_df[["cluster_id", "latitude", "longitude"]].groupby(["latitude", "longitude"]).count()
+
+coordinates = list(zip(*clusters_coordinates.index))
+clusters_coordinates.loc[:, "latitude"] = coordinates[0]
+clusters_coordinates.loc[:, "longitude"] = coordinates[1]
+
+clusters_coordinates.loc[:, "count"] = clusters_coordinates["cluster_id"].apply(safe_pow)
+clusters_coordinates = clusters_coordinates.reset_index(drop=True)
+
+clusters_coordinates.head()
+```
+
+```{python}
+folium_hmap = folium.Map(location=[
+    np.mean([coordinates_bounds[city]["lat"]["lower"], coordinates_bounds[city]["lat"]["upper"]]),
+    np.mean([coordinates_bounds[city]["lon"]["lower"], coordinates_bounds[city]["lon"]["upper"]])
+], zoom_start=13, tiles="OpenStreetMap")
+
+max_amount = clusters_coordinates['count'].max()
+
+hm_wide = HeatMap( 
+    clusters_coordinates[["latitude", "longitude", "count"]],
+    min_opacity=0.2,
+    max_val=max_amount,
+    radius=7, blur=1, 
+    max_zoom=15, 
+    gradient={.1:'yellow', .5: 'orange',  1: 'red'}
+)
+
+folium_hmap.add_child(hm_wide)
+```
+
+```{python}
+
+```

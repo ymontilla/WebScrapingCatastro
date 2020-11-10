@@ -1,0 +1,296 @@
+---
+jupyter:
+  jupytext:
+    formats: ipynb,Rmd
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.5.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+# %load_ext dotenv
+# %reload_ext dotenv
+# %dotenv
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+```
+
+```{python}
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import f_regression
+```
+
+```{python}
+
+```
+
+```{python}
+import sys
+import os
+from os.path import dirname
+
+UTILS_PATH=os.environ.get('REPO') + "/notebooks/commons"
+sys.path.append(dirname(UTILS_PATH))
+
+from commons import check_args, gen_paths
+from commons import coordinates_bounds, plot_feature_importances
+from commons import check_args_variables, gen_paths_variables
+```
+
+```{python}
+
+```
+
+```{python}
+def load_posts(source_path, clean_path):
+    external = pd.read_parquet(source_path)
+    external.loc[:, "lat"] = external["lat"].apply(float)
+    external.loc[:, "lon"] = external["lon"].apply(float)
+    
+    fincaraiz = pd.read_parquet(clean_path)
+    return external, fincaraiz
+```
+
+```{python}
+
+```
+
+```{python}
+if __name__ == "__main__":
+    source = "PLACES"
+    city = "manizales"
+    
+    property_type = "apartamentos"
+    post_type = "venta"
+    
+    base_path = os.environ.get('REPO')
+    
+    source_path = base_path + gen_paths_variables(source, city)
+    raw_path, clean_path = gen_paths(city, property_type, post_type)
+        
+    raw_path = base_path + raw_path
+    clean_path = base_path + clean_path
+```
+
+```{python}
+
+```
+
+```{python}
+external_variables, fincaraiz = load_posts(source_path, clean_path)
+```
+
+```{python}
+from math import cos, asin, sqrt
+def distance(lat1, lon1, lat2, lon2):
+    """
+    El resultado de la medición de distancia esta en kilometros.
+    """
+    p = 0.017453292519943295     #Pi/180
+    a = 0.5 - cos((lat2 - lat1) * p)/2 + cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2
+    return 12742 * asin(sqrt(a))
+
+def post_to_place_distance(publications, places, index):
+    publication = publications.loc[index]
+    
+    places_to_point = places.copy()
+    places_to_point.loc[:, "fid"] = publication["fid"]
+    
+    places_to_point.loc[:, "latitide"] = publication["latitude"]
+    places_to_point.loc[:, "longitude"] = publication["longitude"]
+    
+    places_to_point.loc[:, "distance"] = places_to_point.apply(
+        lambda e: distance(publication["latitude"], publication["longitude"], e["lat"], e["lon"]), axis=1)
+        
+    return places_to_point
+
+import functools
+from multiprocessing import Pool
+def get_near_points(external_variables, fincaraiz):    
+    distance_map = functools.partial(
+        post_to_place_distance, 
+        fincaraiz, external_variables)
+    
+    pool = Pool(8)
+    distances = pool.map(
+        distance_map,
+        fincaraiz.index
+    )
+
+    return pd.concat(distances).reset_index(drop=True)
+```
+
+```{python}
+distances_map = get_near_points(external_variables, fincaraiz)
+distances_map.head()
+```
+
+```{python}
+distances_map.loc[distances_map["distance"] == distances_map["distance"].min()]
+```
+
+```{python}
+## Un punto de interes es cercano a la publicicación cuando esta a menos de 3 kilometros
+
+near_points = distances_map.loc[distances_map["distance"] < 3]
+near_points.head()
+```
+
+```{python}
+near_points.describe()
+```
+
+```{python}
+near_points_by_categories = near_points[["fid", "amenity", "name"]].groupby(["fid", "amenity"]).count()
+near_points_by_categories.head()
+```
+
+```{python}
+index = list(zip(*near_points_by_categories.index))
+near_points_by_categories.loc[:, "fid"] = index[0]
+near_points_by_categories.loc[:, "amenity"] = index[1]
+near_points_by_categories.loc[:, "count"] = near_points_by_categories["name"]
+
+near_points_by_categories = near_points_by_categories.reset_index(drop=True)
+near_points_by_categories = near_points_by_categories.drop(["name"], axis=1)
+near_points_by_categories.head()
+```
+
+```{python}
+
+```
+
+```{python}
+posts_full = fincaraiz[["fid"]].copy()
+posts_full = posts_full.drop_duplicates(["fid"])
+
+def safe_get(post, amenity):
+    client = near_points_by_categories.loc[
+        near_points_by_categories["fid"] == post["fid"]]
+    
+    if client.shape[0] == 0:
+        return 0
+    
+    client = client.loc[client["amenity"] == amenity]
+    if client.shape[0] == 0:
+        return 0
+    
+    return client["count"].iloc[0]
+```
+
+```{python}
+for amenity in external_variables["amenity"].value_counts().index:
+    posts_full.loc[:, amenity] = posts_full.apply(lambda e: safe_get(e, amenity), axis=1)
+```
+
+```{python}
+# posts_full["airport"].describe()
+```
+
+```{python}
+
+```
+
+```{python}
+## Las features y las etiquetas son las mismas en todos los métodos
+
+FEATURES = list(filter(lambda e: e != "fid", posts_full.columns))
+LABEL = "price"
+
+final_features = pd.merge(posts_full, fincaraiz[["fid", "price"]], on="fid")
+
+X = final_features[FEATURES].values
+y = final_features[LABEL].values
+```
+
+```{python}
+
+```
+
+## Selección de features univariada
+
+```{python}
+selector = SelectKBest(f_regression, k=5)
+X_new = selector.fit_transform(X, y)
+X_new.shape
+```
+
+```{python}
+
+```
+
+```{python}
+feature_importances = pd.DataFrame({'importance': selector.scores_, 'feature': FEATURES})
+```
+
+```{python}
+plot_feature_importances(feature_importances)
+```
+
+```{python}
+
+```
+
+## Eliminación recursiva de features
+
+```{python}
+from sklearn.linear_model import LinearRegression
+from sklearn.feature_selection import RFE
+```
+
+```{python}
+reg = LinearRegression().fit(X, y)
+reg.score(X, y)
+```
+
+```{python}
+rfe = RFE(estimator=reg, n_features_to_select=1, step=1)
+rfe.fit(X, y)
+```
+
+```{python}
+feature_importances = pd.DataFrame({'importance': rfe.ranking_, 'feature': FEATURES})
+```
+
+```{python}
+plot_feature_importances(feature_importances)
+```
+
+```{python}
+
+```
+
+## Selección de features basada en arboles
+
+```{python}
+from sklearn.ensemble import ExtraTreesRegressor
+```
+
+```{python}
+forest = ExtraTreesRegressor(n_estimators=100, random_state=0)
+forest.fit(X, y)
+```
+
+```{python}
+feature_importances = pd.DataFrame({'importance':  forest.feature_importances_, 'feature': FEATURES})
+```
+
+```{python}
+plot_feature_importances(feature_importances)
+```
+
+```{python}
+
+```

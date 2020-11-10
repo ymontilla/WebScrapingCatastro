@@ -1,0 +1,20 @@
+# Instalar la extención de withcraft
+
+https://luciopaiva.com/witchcraft/how-to-install.html
+- https://github.com/luciopaiva/witchcraft
+- https://github.com/kzahel/web-server-chrome
+
+
+
+# Unir descargas del bot en un solo CSV
+
+### Ventas
+
+chmod +x <repo-basae>/fincaraiz/withcraft/format_result.pl
+
+echo "surface|rooms|baths|garages|price|location|description|coordinates|used|url|additional_info|nature|pictures" > apartments.csv
+find . -type f -not -name "apartments.csv" -exec <repo-basae>/fincaraiz/withcraft/format_result.pl {} \; >> apartments.csv
+
+
+### Verifica que el conteo de columnas este bn, deberpían haber 12 columnas
+cat apartments.csv | perl -lne '@F = split("\\\|", $_); print $#F' | sort | uniq -c

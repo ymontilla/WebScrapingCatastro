@@ -1,0 +1,278 @@
+---
+jupyter:
+  jupytext:
+    formats: ipynb,Rmd
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.5.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+# %load_ext dotenv
+# %reload_ext dotenv
+# %dotenv
+```
+
+```{python}
+import sys
+import os
+from os.path import dirname
+
+UTILS_PATH=os.environ.get('REPO') + "/src/overpass"
+sys.path.append(dirname(UTILS_PATH))
+
+UTILS_PATH=os.environ.get('REPO') + "/src/places"
+sys.path.append(dirname(UTILS_PATH))
+```
+
+```{python}
+import places
+```
+
+```{python}
+import overpass
+```
+
+```{python}
+
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+def generate_locations_grid(coordinates, grid=0.1):
+    x_axis = np.arange(coordinates['lat']['lower'], coordinates['lat']['upper'], grid)
+    y_axis = np.arange(coordinates['lon']['lower'], coordinates['lon']['upper'], grid)
+    
+    results = []
+    for i in x_axis:
+        for j in y_axis:
+            results.append((i, j))
+    
+    df = pd.DataFrame(results)
+    df.columns = ['latitude', 'longitude']
+    return df
+
+AMENITIES = ["university", "shopping_mall", "school", "secondary_school", "police", "park", 
+         "local_government_office", "library", "hospital", "church", "airport", "amusement_park",
+            "bank", "restaurant"]
+
+def build_interest_points_places(df, amenities=AMENITIES):
+    results = []
+    
+    for location_id in df.index:
+        location = df.loc[location_id]
+        for amenity in amenities:
+            results.append(
+                places.query_google_nearby(location, amenity)
+            )
+        
+    final = pd.concat(results)
+    final.index = list(range(final.shape[0]))
+    final.reindex()
+    return final
+
+
+```
+
+```{python}
+
+```
+
+```{python}
+DATE = "2020-10-16"
+
+OSM_TEMPLATE = os.environ.get('REPO') + f"/data/OSM/{DATE}/puntos_interes_{{}}.parquet"
+OSM_INPUT_TEMPLATE = os.environ.get('REPO') +  f"/data/OSM/{DATE}/{{}}.geojson"
+
+PLACES_TEMPLATE = os.environ.get('REPO') + f"/data/PLACES/{DATE}/puntos_interes_{{}}.parquet"
+```
+
+```{python}
+from os.path import isfile
+
+def prepare_places_df(locations_grid, filename):
+    interest_points = build_interest_points_places(locations_grid)
+    
+    interest_points = interest_points.loc[:, ["i_lat", "i_lon", "amenity", "name"]]
+    interest_points.columns = ["lat", "lon", "amenity", "name"]
+    interest_points = interest_points.drop_duplicates(["lat", "lon", "amenity", "name"])
+    
+    interest_points.to_parquet(filename)
+    
+    return interest_points
+
+def load_places_results(coordinates, filename, grid=0.01):
+    locations_grid = generate_locations_grid(coordinates, grid=grid)
+    
+    if isfile(filename):
+        return pd.read_parquet(filename)
+    
+    return prepare_places_df(coordinates, filename)
+
+def load_osm_results(filename, osm_filename):    
+    if isfile(filename):
+        return pd.read_parquet(filename)
+    
+    osm_df = overpass.read_nodes_overpass_api(osm_filename)
+    osm_df.to_parquet(filename)
+
+    return osm_df
+```
+
+```{python}
+
+```
+
+## Fusagasuga
+
+```{python}
+fusagasuga_coordinates = {
+    'lat': {
+        'lower': 4.323127,
+        'upper': 4.356505
+    },
+    'lon':{
+        'lower': -74.419864,
+        'upper': -74.349483
+    }
+}
+```
+
+### OSM
+
+Los resultados se descargan en geojson usando el API de overpass
+
+> curl 'https://overpass-api.de/api/interpreter' -H 'Connection: keep-alive' -H 'Accept: */*' -H 'Origin: https://overpass-turbo.eu' -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36' -H 'Content-Type: application/x-www-form-urlencoded; charset=UTF-8' -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: cors' -H 'Referer: https://overpass-turbo.eu/' -H 'Accept-Encoding: gzip, deflate, br' -H 'Accept-Language: es,es-419;q=0.9' --data 'data=%2F*%0AThis+has+been+generated+by+the+overpass-turbo+wizard.%0AThe+original+search+was%3A%0A%E2%80%9Camenity%3Dbus_station%E2%80%9D%0A*%2F%0A%5Bout%3Ajson%5D%5Btimeout%3A60%5D%3B%0A%2F%2F+gather+results%0A(%0A++node(4.3114066719897925%2C-74.40919876098633%2C4.359762236889401%2C-74.3488597869873)%3B%0A)%3B%0A%2F%2F+print+results%0Aout+body%3B%0A%3E%3B%0Aout+skel+qt%3B' --compressed  >> fusagasuga.geojson
+
+```{python}
+fusgagasuga_osm_df = load_osm_results(OSM_TEMPLATE.format("fusagasuga"), OSM_INPUT_TEMPLATE.format("fusagasuga"))
+fusgagasuga_osm_df.head()
+```
+
+```{python}
+fusgagasuga_osm_df.shape
+```
+
+```{python}
+fusgagasuga_osm_df["amenity"].value_counts()
+```
+
+```{python}
+
+```
+
+### Places
+
+```{python}
+fusagasuga_interest_points = load_places_results(fusagasuga_coordinates, PLACES_TEMPLATE.format("fusagasuga"))
+fusagasuga_interest_points.head()
+```
+
+```{python}
+fusagasuga_interest_points.shape
+```
+
+```{python}
+fusagasuga_interest_points["amenity"].value_counts()
+```
+
+```{python}
+
+```
+
+## Manizales
+
+```{python}
+manizales_coordinates = {
+    'lat': {
+        'lower': 5.017395,
+        'upper': 5.119305
+    },
+    'lon':{
+        'lower': -75.556431,
+        'upper': -75.410519
+    }
+}
+```
+
+### OSM
+
+Los resultados se descargan en geojson usando el API de overpass
+
+> curl 'https://overpass-api.de/api/interpreter' -H 'Connection: keep-alive' -H 'Accept: */*' -H 'Origin: https://overpass-turbo.eu' -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36' -H 'Content-Type: application/x-www-form-urlencoded; charset=UTF-8' -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: cors' -H 'Referer: https://overpass-turbo.eu/' -H 'Accept-Encoding: gzip, deflate, br' -H 'Accept-Language: es,es-419;q=0.9' --data 'data=%2F*%0AThis+has+been+generated+by+the+overpass-turbo+wizard.%0AThe+original+search+was%3A%0A%E2%80%9Camenity%3Dbus_station%E2%80%9D%0A*%2F%0A%5Bout%3Ajson%5D%5Btimeout%3A60%5D%3B%0A%2F%2F+gather+results%0A(%0A++node(5.013825705113532%2C-75.55606842041016%2C5.1104360769930555%2C-75.43539047241211)%3B%0A)%3B%0A%2F%2F+print+results%0Aout+body%3B%0A%3E%3B%0Aout+skel+qt%3B' --compressed >> manizales.geojson
+
+```{python}
+manizales_osm_df = load_osm_results(OSM_TEMPLATE.format("manizales"), OSM_INPUT_TEMPLATE.format("manizales"))
+manizales_osm_df.head()
+```
+
+```{python}
+manizales_osm_df.shape
+```
+
+### Places
+
+```{python}
+manizales_interest_points = load_places_results(manizales_coordinates, PLACES_TEMPLATE.format("manizales"))
+manizales_interest_points.head()
+```
+
+```{python}
+manizales_interest_points.shape
+```
+
+```{python}
+
+```
+
+## Villavicencio
+
+```{python}
+villavicencio_coordinates = {
+    'lat': {
+        'lower': 4.112948,
+        'upper': 4.163473
+    },
+    'lon':{
+        'lower': -73.658594,
+        'upper': -73.588900
+    }
+}
+```
+
+### OSM
+
+Los resultados se descargan en geojson usando el API de overpass
+
+> curl 'https://overpass-api.de/api/interpreter' -H 'Connection: keep-alive' -H 'Accept: */*' -H 'Origin: https://overpass-turbo.eu' -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36' -H 'Content-Type: application/x-www-form-urlencoded; charset=UTF-8' -H 'Sec-Fetch-Site: cross-site' -H 'Sec-Fetch-Mode: cors' -H 'Referer: https://overpass-turbo.eu/' -H 'Accept-Encoding: gzip, deflate, br' -H 'Accept-Language: es,es-419;q=0.9' --data 'data=%2F*%0AThis+has+been+generated+by+the+overpass-turbo+wizard.%0AThe+original+search+was%3A%0A%E2%80%9Camenity%3Dbus_station%E2%80%9D%0A*%2F%0A%5Bout%3Ajson%5D%5Btimeout%3A60%5D%3B%0A%2F%2F+gather+results%0A(%0A++node(4.030028615876668%2C-73.73886108398438%2C4.223502948820042%2C-73.49750518798828)%3B%0A)%3B%0A%2F%2F+print+results%0Aout+body%3B%0A%3E%3B%0Aout+skel+qt%3B' --compressed >> villavicencio.geojson
+
+```{python}
+villavicencio_osm_df = load_osm_results(OSM_TEMPLATE.format("villavicencio"), OSM_INPUT_TEMPLATE.format("villavicencio"))
+villavicencio_osm_df.head()
+```
+
+```{python}
+villavicencio_osm_df.shape
+```
+
+### Places
+
+```{python}
+villavicencio_interest_points = load_places_results(villavicencio_coordinates, PLACES_TEMPLATE.format("villavicencio"))
+villavicencio_interest_points.head()
+```
+
+```{python}
+villavicencio_interest_points.shape
+```
+
+```{python}
+
+```

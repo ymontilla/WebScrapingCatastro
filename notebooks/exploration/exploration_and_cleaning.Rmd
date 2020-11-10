@@ -1,0 +1,542 @@
+---
+jupyter:
+  jupytext:
+    formats: ipynb,Rmd
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.5.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+import codecs
+
+import pandas as pd 
+import numpy as np
+
+from scipy import stats
+
+import ast
+
+from math import cos, asin, sqrt
+```
+
+```{python}
+import matplotlib
+import matplotlib.pyplot as plt
+```
+
+```{python}
+import re
+import os
+
+import pandas as pd 
+import numpy as np
+
+from functools import partial 
+```
+
+```{python}
+import shutil
+import os
+```
+
+```{python}
+import missingno as msno
+import matplotlib.pyplot as plt
+import seaborn as sns
+```
+
+```{python}
+from wordcloud import WordCloud 
+from itertools import chain
+```
+
+```{python}
+import nltk
+from nltk.corpus import stopwords
+
+nltk.download('punkt')
+nltk.download('stopwords')
+```
+
+```{python}
+# %load_ext dotenv
+# %reload_ext dotenv
+# %dotenv
+```
+
+```{python}
+
+```
+
+```{python}
+import sys
+from os.path import dirname
+UTILS_PATH=os.environ.get('REPO') + "/notebooks/commons"
+sys.path.append(dirname(UTILS_PATH))
+
+from commons import check_args, gen_paths, coordinates_bounds
+```
+
+```{python}
+
+```
+
+```{python}
+### Limpieza de la data cruda
+```
+
+```{python}
+## Lista los enlaces de publicaciones que sabemos deberian excluirse
+
+UNUSUAL_VALUES = ["https://www.fincaraiz.com.co/apartamento-en-venta/manizales/laureles-det-5488282.aspx"]
+```
+
+```{python}
+## Para verificar si un campo quedo vacío usaria series.isna()
+def check_field(fn, e):
+    try:
+        return fn(e)
+    except:
+        return None
+    
+check_float = partial(check_field, float)
+check_int = partial(check_field, int)
+```
+
+```{python}
+### La variable surface habla de el area del inmueble
+
+surface_formatter = lambda e: e.replace('m²', '').replace(',', '.').strip()
+```
+
+```{python}
+### La variable price es el valor del inmueble en millones de pesos
+
+price_formatter = lambda e: e.replace('$','').replace('.', '').strip()
+price_cast = lambda e: None if e == None else e/1000000
+```
+
+```{python}
+### Rooms es al cantidad de habitaciones del inmueble
+
+rooms_formatter = lambda e: e.replace('Habitaciones:','').strip()
+```
+
+```{python}
+### Baths es al cantidad de baños del inmueble
+
+baths_formatter = lambda e: e.replace('Baños:','').strip()
+```
+
+```{python}
+### Baths es al cantidad de baños del inmueble
+
+garages_formatter = lambda e: e.replace('Parqueaderos:','').strip()
+```
+
+```{python}
+### Both latitude and longitud appear under coordinates
+
+def get_lat_lon(e, pattern=r'lat:([-\d\.]+),lon:([-\d\.]+)'):
+    r = re.search(r'lat:([-\d\.]+),lon:([-\d\.]+)', e)
+    if r == None:
+        return ['0', '0']
+    return [r.group(1), r.group(2)]
+
+latitude_formatter = lambda e: get_lat_lon(e)[0]
+longitude_formatter = lambda e: get_lat_lon(e)[1]
+coordinate_cast = lambda e: None if e == '0' else float(e)
+```
+
+```{python}
+## Algunos apartamentos tienen un costo asociado que es el de adminitración
+
+def get_admon(e, pattern = r'Adm.n:\$([\d\,]+)\w.*'):
+    r = re.search(pattern, e)
+    if r == None:
+        return None
+    else:
+        return r.group(1).replace(",", "")
+```
+
+```{python}
+## El estrato es una variable importante
+
+def get_estrato(e, pattern = r'Estrato:(\d)\w.*'):
+    r = re.search(pattern, e)
+    if r != None:
+        return r.group(1)
+    return r
+```
+
+```{python}
+## La antiguedad del inmueble puede indicar si es necesario hacer arreglos, o el tiempo que va a seguir rentando
+
+def get_antiguedad(e, pattern = r'Antig.edad:([\w\s]+)\sa.os'):
+    r = re.search(pattern, e)
+    if r != None:
+        return r.group(1)
+    return r
+```
+
+```{python}
+## Finca raiz tiene un identificador unico en la URL, con esto se pueden filtrar publicaciones duplicadas pero no
+## aún no sabemos si la misma casa aparece en 2 publicaciones.
+
+def fincaraiz_id(e):
+    pattern = r'det-(\d+)\.aspx'
+    r = re.search(pattern, e)
+    if r != None:
+        return r.group(1)
+    return r
+```
+
+```{python}
+def filter_unusual_values(df, UNUSUAL_VALUES):
+    if UNUSUAL_VALUES == None:
+        return df
+    unusual_condition = (UNUSUAL_VALUES[0] == df["url"])
+    for i in range(1, len(UNUSUAL_VALUES)):
+        unusual_condition = unusual_condition | (UNUSUAL_VALUES[i] == df["url"])
+    df = df.loc[~unusual_condition]
+    df.reindex()
+    return df
+```
+
+```{python}
+def cleanUpValues(df):
+    df = df.copy()
+    df.loc[:, "surface"] = df["surface"].apply(surface_formatter).apply(check_float)
+    df.loc[:, "price"] = df["price"].apply(price_formatter).apply(check_float).apply(price_cast)
+    df.loc[:, "rooms"] = df["rooms"].apply(rooms_formatter).apply(check_int)
+    df.loc[:, "baths"] = df["baths"].apply(baths_formatter).apply(check_int)
+    df.loc[:, "garages"] = df["garages"].apply(garages_formatter).apply(check_int)
+    df.loc[:, "latitude"] = df["coordinates"].apply(latitude_formatter).apply(coordinate_cast)
+    df.loc[:, "longitude"] = df["coordinates"].apply(longitude_formatter).apply(coordinate_cast)
+    df.loc[:, "admon"] = df["additional_info"].apply(get_admon).apply(check_int)
+    df.loc[:, "estrato"] = df["additional_info"].apply(get_estrato).apply(check_int)
+    df.loc[:, "antiguedad"] = df["additional_info"].apply(get_antiguedad)
+    df.loc[:, "fid"] = df["url"].apply(fincaraiz_id)
+    
+    final = df.loc[:, ["surface", "rooms", "baths", "garages", "price", "latitude", "description",
+                      "longitude", "location", "url", "admon", "estrato", "antiguedad", "fid"]]
+    final = final.drop_duplicates(["fid"])
+    final.index = list(range(final.shape[0]))
+    final = final.reindex()
+    
+    return final
+```
+
+```{python}
+def read_data_full(filename):
+    ## Carga resultado del crawling the finca raiz
+    posts = pd.read_parquet(filename)    
+    """
+    ### Pueden haber campos faltantes
+    
+    La idea es identificar estas publicaciones para completar la información y poderles dar un trato diferente, 
+    si un campo viene vacio o no tiene sentido la idea es configurarlo en None, de esta forma el código que sigue
+    a continuación puede identificar facilment el caso. 
+    """
+    publications = cleanUpValues(posts)
+    publications = filter_unusual_values(publications, UNUSUAL_VALUES)
+    return publications
+```
+
+```{python}
+
+```
+
+```{python}
+### Utilidades para el analisis exploratorio de datos
+```
+
+```{python}
+false_validator = lambda e: False
+
+def eda_non_valid(df, validator):
+    results = []
+    
+    final_validator = {}
+    for column in df.columns:
+        final_validator[column] = false_validator
+        
+    final_validator.update(validator)
+    
+    non_valid_filter = df[df.columns[0]] == df[df.columns[0]]
+    for column in df.columns:
+        nan_condition = df[column].isna()
+        valid_condition = df[column].apply(final_validator[column])
+        non_valid_filter = non_valid_filter & (~nan_condition) & (~valid_condition)
+        results.append([column, df.loc[nan_condition].shape[0], df.loc[~nan_condition].loc[valid_condition].shape[0]])
+    
+    pd_results = pd.DataFrame(results)
+    pd_results.columns = ["column", "nan", "non_valid"]
+    return pd_results, df.loc[non_valid_filter]
+
+def validators_builder(coordinates):    
+    coordinate_validator = lambda e, axis: coordinates[axis]['lower'] > e or coordinates[axis]['upper'] < e
+
+    return {
+        'latitude': lambda e: coordinate_validator(e, 'lat'),
+        'longitude': lambda e: coordinate_validator(e, 'lon')
+    }
+
+def generic_bars_props_2(fig, x, y, categories, label_template):
+    ax = fig.add_subplot(1,1,1)
+
+    N = len(x)
+    width=0.5
+    x_axis = range(1,N+1)
+
+    colors = ["blue", "green"] 
+    for i in range(2):
+        x_result = list(map(lambda e: N*width*e + width*i - width/2.0, x_axis))
+        ax.bar(x_result, y[i], width=width, label=label_template + str(categories[i]), color=colors[i])
+
+    x_ticks = list(map(lambda e: N*width*e, x_axis))
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels(x)
+    
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(90)
+
+    plt.legend(loc='best')
+    
+def plot_valid_bars(df, builder):
+    fincaraiz_validator = builder()
+    
+    df_valid, valid_samples = eda_non_valid(df, fincaraiz_validator)
+    df_valid.head()
+    
+    generic_bars_props_2(
+        plt.figure(figsize=(16, 4)),
+        df_valid['column'],
+        [
+            df_valid["nan"],
+            df_valid["non_valid"]
+        ],
+        [
+            "nan",
+            "non valid"
+        ],
+        "error: "
+    )
+    
+    return valid_samples
+```
+
+```{python}
+def generic_bars(ax, x, y, label):
+    N = len(x)
+    width=0.5
+    x_axis = range(1,N+1)
+
+    x_result = list(map(lambda e: N*width*e, x_axis))
+    ax.bar(x_result, y, width=width, label="# " + label, color="green")
+
+    x_ticks = list(map(lambda e: N*width*e, x_axis))
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels(x)
+
+    ax.set_title(label)
+    ax.legend(loc='best')
+    
+def plot_discrete_columns(df):
+    fig = plt.figure(figsize=(16, 20))
+
+    discrete_columns = ["rooms", "baths", "garages", "estrato", "antiguedad"]
+    for i in range(1, len(discrete_columns) +  1):
+        column = discrete_columns[i - 1]
+        single_column = df[column].value_counts()
+
+        ax = fig.add_subplot(len(discrete_columns),1,i)
+        generic_bars(
+            ax,
+            single_column.index,
+            single_column.values,
+            column
+        )
+```
+
+```{python}
+
+```
+
+```{python}
+def load_posts(input_path, city, property_type, post_type):
+    df = read_data_full(input_path)
+    df.loc[:, "city"] = city
+    df.loc[:, "property_type"] = property_type
+    df.loc[:, "post_type"] = post_type
+    return df
+
+def write_posts(df, output_path):
+    basename = output_path.split("/")[:-1]
+    basename = "/".join(basename)
+    
+    try:
+        shutil.rmtree(basename)
+    except FileNotFoundError as e:
+        print("First time running this script")
+    
+    os.makedirs(basename)
+    
+    print(output_path)
+    df.to_parquet(output_path)
+```
+
+```{python}
+
+```
+
+```{python}
+if __name__ == "__main__":
+    city = "manizales"
+    property_type = "casas"
+    post_type = "venta"
+    
+    #city, property_type, post_type = check_args()
+    base_path = os.environ.get('REPO')
+    
+    input_path, output_path = gen_paths(city, property_type, post_type)
+    
+    input_path = base_path + input_path
+    output_path = base_path + output_path
+```
+
+```{python}
+MSG = """
+Hay {} publicaciones de {} en total
+"""
+
+posts = load_posts(input_path, city, property_type, post_type)
+print(MSG.format(posts.shape[0], post_type))
+posts.head()
+```
+
+```{python}
+
+```
+
+## Exploración general
+
+```{python}
+builder = lambda : validators_builder(coordinates_bounds[city])
+
+condition = (posts["city"] == city) & (posts["property_type"] == property_type) \
+                  & (posts["post_type"] == post_type)
+```
+
+### Rango de valores y campos faltantes
+
+El campo menos comun es el de la administración, seguido por el de garages y la anteguedad
+
+```{python}
+# %matplotlib inline
+
+msno.bar(posts)
+```
+
+## Exploración de variables de texto
+
+```{python}
+post_words = posts["description"].apply(lambda e: nltk.word_tokenize(e)) \
+        .apply(lambda e: list(filter(
+    lambda e: e not in stopwords.words('spanish') and \
+                e not in [',', '.', '!', '..', ':', ';'] and \
+            e.isalpha(), e)))
+post_words
+```
+
+```{python}
+## https://stackoverflow.com/questions/35004945/reduce-function-for-series
+
+tokenized_words = list(chain.from_iterable(post_words.values))
+```
+
+```{python}
+word_cloud_text = " ".join(tokenized_words)
+wordcloud = WordCloud(max_font_size=100, max_words=100, background_color="white",\
+                    scale=10, width=900, height=600).generate(word_cloud_text)
+plt.figure(figsize=(20,8))
+plt.imshow(wordcloud, interpolation="bilinear")
+plt.axis("off")
+plt.show()
+```
+
+```{python}
+
+```
+
+```{python}
+# %matplotlib inline
+
+plot_discrete_columns(posts)
+```
+
+```{python}
+# %matplotlib inline
+
+## Se filtran las publicaciones que tienen nulos o no complen con los validadores
+
+plot_valid_bars(posts, builder)
+```
+
+### Campos en que se conoce el significado de None
+
+Varias publicaciones no continen algunos campos, pero la asusencia del campo no significa que se desconosca su valor, en estos casos voy a asumir que el valor es cero
+
+```{python}
+clean_posts = posts.copy()
+
+clean_posts.loc[clean_posts["admon"].isna(), "admon"] = 0
+clean_posts.loc[clean_posts["garages"].isna(), "garages"] = 0
+```
+
+```{python}
+## Antigueda es un string, así que voy a conservar las publicaciones pero en este caso le voy a poner desconocido
+
+clean_posts.loc[clean_posts["antiguedad"].isna(), "antiguedad"] = "desconocido"
+```
+
+```{python}
+# %matplotlib inline
+
+## Se filtran las publicaciones que tienen nulos o no complen con los validadores
+
+clean_posts = plot_valid_bars(clean_posts, builder)
+clean_posts.head()
+```
+
+```{python}
+# Precio por metro 2
+
+clean_posts.loc[:, "price_m2"] = clean_posts["price"]/clean_posts["surface"]
+```
+
+```{python}
+MSG = """
+Hay {} publicaciones de {} validas
+""".format(
+    clean_posts.shape[0],
+    post_type
+)
+
+print(MSG)
+```
+
+```{python}
+write_posts(clean_posts, output_path)
+```
+
+```{python}
+
+```

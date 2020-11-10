@@ -1,0 +1,210 @@
+---
+jupyter:
+  jupytext:
+    formats: ipynb,Rmd
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.5.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+# %load_ext dotenv
+# %reload_ext dotenv
+# %dotenv
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+```
+
+```{python}
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import chi2
+
+from sklearn.feature_selection import f_regression
+```
+
+```{python}
+
+```
+
+```{python}
+import sys
+import os
+from os.path import dirname
+
+UTILS_PATH=os.environ.get('REPO') + "/notebooks/commons"
+sys.path.append(dirname(UTILS_PATH))
+
+from commons import check_args, gen_paths, coordinates_bounds, plot_feature_importances
+```
+
+```{python}
+
+```
+
+```{python}
+def load_posts(input_path):
+    df = pd.read_parquet(input_path)
+    return df
+```
+
+```{python}
+
+```
+
+```{python}
+if __name__ == "__main__":
+    city = "manizales"
+    property_type = "apartamentos"
+    post_type = "venta"
+    
+    #city, property_type, post_type = check_args()
+    base_path = os.environ.get('REPO')
+
+    raw_path, clean_path = gen_paths(city, property_type, post_type)
+    
+    raw_path = base_path + raw_path
+    clean_path = base_path + clean_path
+```
+
+```{python}
+
+```
+
+```{python}
+MSG = """
+Hay {} publicaciones de {} en total
+"""
+
+posts = load_posts(clean_path)
+print(MSG.format(posts.shape[0], post_type))
+posts.head()
+```
+
+```{python}
+
+```
+
+## Es necesario cambiar la representación de algunas de las columnas
+
+
+```{python}
+## La antiguedad tiene 5 posibles valores pero se representa con un string, la idea es usar un entero en cambio
+
+antiguedades = posts["antiguedad"].value_counts().index
+new_antiguedades = {}
+for i in range(len(antiguedades)):
+    new_antiguedades[antiguedades[i]] = i
+new_antiguedades
+```
+
+```{python}
+posts.loc[:, "antiguedad"] = posts["antiguedad"].apply(lambda e: new_antiguedades[e])
+```
+
+```{python}
+
+```
+
+```{python}
+## Las features y las etiquetas son las mismas en todos los métodos
+
+FEATURES = [
+    'surface', 'rooms', 
+    'baths', 'garages', 'latitude', 
+    'longitude', 'admon', 
+    'estrato','antiguedad'
+]
+
+LABEL = "price"
+
+X = posts[FEATURES].values
+y = posts[LABEL].values
+```
+
+## Selección de features univariada
+
+```{python}
+selector = SelectKBest(f_regression, k=5)
+X_new = selector.fit_transform(X, y)
+X_new.shape
+```
+
+```{python}
+
+```
+
+```{python}
+feature_importances = pd.DataFrame({'importance': selector.scores_, 'feature': FEATURES})
+```
+
+```{python}
+plot_feature_importances(feature_importances)
+```
+
+```{python}
+
+```
+
+## Eliminación recursiva de features
+
+```{python}
+from sklearn.linear_model import LinearRegression
+from sklearn.feature_selection import RFE
+```
+
+```{python}
+reg = LinearRegression().fit(X, y)
+reg.score(X, y)
+```
+
+```{python}
+rfe = RFE(estimator=reg, n_features_to_select=1, step=1)
+rfe.fit(X, y)
+```
+
+```{python}
+feature_importances = pd.DataFrame({'importance': rfe.ranking_, 'feature': FEATURES})
+```
+
+```{python}
+plot_feature_importances(feature_importances)
+```
+
+```{python}
+
+```
+
+## Selección de features basada en arboles
+
+```{python}
+from sklearn.ensemble import ExtraTreesRegressor
+```
+
+```{python}
+forest = ExtraTreesRegressor(n_estimators=100, random_state=0)
+forest.fit(X, y)
+```
+
+```{python}
+feature_importances = pd.DataFrame({'importance':  forest.feature_importances_, 'feature': FEATURES})
+```
+
+```{python}
+plot_feature_importances(feature_importances)
+```
+
+```{python}
+
+```

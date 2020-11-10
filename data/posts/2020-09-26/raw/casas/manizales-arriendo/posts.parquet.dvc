@@ -1,0 +1,3 @@
+outs:
+- md5: 48fd7dba3a0a0cc453aa9006ece4240e
+  path: posts.parquet

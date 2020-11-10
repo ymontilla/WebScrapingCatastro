@@ -1,0 +1,3 @@
+outs:
+- md5: dd15b0b280dfccdb43ad9f52433b5a11
+  path: puntos_interes_manizales.parquet
